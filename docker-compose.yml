@@ -27,6 +27,19 @@ services:
       - SERVER_URL=http://server:8080
     restart: unless-stopped
 
+  guarded-client:
+    build:
+      context: .
+      dockerfile: examples/guarded/Dockerfile
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - leak-guard-network
+    environment:
+      - SERVER_URL=http://server:8080
+    restart: unless-stopped
+
 networks:
   leak-guard-network:
     driver: bridge

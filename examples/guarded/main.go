@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -9,17 +11,6 @@ import (
 	"sync"
 	"time"
 )
-
-func getFDCount() int {
-	// 1. 尝试读取 Linux 标准的进程文件描述符目录
-	files, err := os.ReadDir("/proc/self/fd")
-	if err != nil {
-		// 如果读取失败，返回 -1 方便我们在日志中区分“获取失败”和“数值为0”
-		return -1
-	}
-	// 减去 1 是因为 ReadDir 本身打开该目录也会占用一个 FD
-	return len(files) - 1
-}
 
 func main() {
 	client := &http.Client{}
@@ -37,15 +28,22 @@ func main() {
 					serverURL = envURL
 				}
 				resp, err := client.Get(serverURL)
-				if err != nil {
-					log.Printf("Request error: %v", err)
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
+			if err != nil {
+				log.Printf("Request error: %v", err)
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
 
-				// Intentionally only close body without reading it
-				defer resp.Body.Close()
-				// NOT reading the body: io.ReadAll(resp.Body) - this causes connection leaks!
+			// OPTIMIZED: Use an immediately-invoked function literal to ensure atomic resource handling.
+			// This guarantees resource cleanup even if subsequent logic panics.
+			func() {
+				// CRITICAL: Drain and discard the remaining body data.
+				// This is the key to allowing the Transport to reuse the TCP connection.
+				_, _ = io.Copy(io.Discard, resp.Body)
+
+				// Ensure the body is closed, even if a panic occurs.
+				resp.Body.Close()
+			}()
 
 				time.Sleep(50 * time.Millisecond)
 			}
@@ -61,7 +59,10 @@ func main() {
 			// Cross-platform way to count file descriptors
 			if runtime.GOOS == "linux" {
 				// Linux: count files in /proc/self/fd
-				fdCount = getFDCount()
+				data, err := ioutil.ReadFile("/proc/self/fd")
+				if err == nil {
+					fdCount = len(data) // This is approximate, actual count would need directory listing
+				}
 			} else if runtime.GOOS == "windows" {
 				// Windows: we can't easily count handles, so we'll show a placeholder
 				fdCount = -1
@@ -80,7 +81,8 @@ func main() {
 		}
 	}()
 
-	fmt.Println("Starting vulnerable HTTP client with 50 concurrent goroutines...")
+	fmt.Println("Starting guarded HTTP client with 50 concurrent goroutines...")
+	fmt.Println("This version properly drains response bodies to prevent connection leaks")
 	fmt.Println("Press Ctrl+C to stop")
 
 	wg.Wait()

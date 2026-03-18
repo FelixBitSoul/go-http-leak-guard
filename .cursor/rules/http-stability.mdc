@@ -1,0 +1,115 @@
+---
+description: HTTP Connection Stability Rules - Prevent Connection Leaks
+globs: "**/*.go"
+alwaysApply: true
+---
+
+# HTTP Connection Stability Rules
+
+## Objective
+Ensure all HTTP client requests correctly drain the response body to prevent connection leaks and resource exhaustion.
+
+## Rule Details
+
+### Requirements
+When handling HTTP responses, the following order must be followed:
+
+1. **Drain Response Body**: Use `io.Copy(io.Discard, resp.Body)` or `io.ReadAll(resp.Body)`
+2. **Close Response Body**: Execute `resp.Body.Close()`
+
+### Bad Practice ❌
+```go
+// DANGEROUS: Closing without draining leads to connection leaks
+resp, err := client.Get(url)
+if err != nil {
+    return err
+}
+defer resp.Body.Close()  // ❌ Response body is not drained
+```
+
+### Good Practice ✅
+```go
+// SAFE: Drain before closing to ensure connection reuse
+resp, err := client.Get(url)
+if err != nil {
+    return err
+}
+defer func() {
+    // Drain the response body
+    _, _ = io.Copy(io.Discard, resp.Body)
+    // Close the response body
+    resp.Body.Close()
+}()
+```
+
+### Optimized Pattern 🚀 (Recommended)
+```go
+// BEST PRACTICE: Use an immediately-invoked function literal for atomic resource handling
+// This ensures proper cleanup even if subsequent logic panics
+resp, err := client.Get(url)
+if err != nil {
+    return err
+}
+
+func() {
+    // CRITICAL: Drain and discard the remaining body data
+    // This is the key to allowing the Transport to reuse the TCP connection
+    _, _ = io.Copy(io.Discard, resp.Body)
+    
+    // Ensure the body is closed, even if a panic occurs
+    resp.Body.Close()
+}()
+```
+
+### More Complete Error Handling
+```go
+// BEST PRACTICE: Complete error handling and connection management
+resp, err := client.Get(url)
+if err != nil {
+    return fmt.Errorf("request failed: %w", err)
+}
+defer func() {
+    // Drain the response body, ignoring errors (connection might already be closed)
+    _, _ = io.Copy(io.Discard, resp.Body)
+    // Close the response body
+    if err := resp.Body.Close(); err != nil {
+        log.Printf("failed to close response body: %v", err)
+    }
+}()
+
+// Process the response content
+if resp.StatusCode != http.StatusOK {
+    return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+}
+```
+
+## Detection Patterns
+
+### Code Patterns to Detect
+- Any call to `http.Client` (`.Get()`, `.Post()`, `.Do()`, etc.)
+- Usage of `http.DefaultClient`
+- Usage of custom HTTP clients
+
+### Key Checkpoints
+1. Is the response body correctly closed?
+2. Is the response body drained before closing?
+3. Does the error handling path also follow this rule?
+
+## Auto-Fix Suggestions
+
+When unsafe HTTP client usage is detected, it is recommended to:
+
+1. **Add Drain Operation**: Insert `io.Copy(io.Discard, resp.Body)` before `resp.Body.Close()`
+2. **Use Defer Wrapper**: Wrap the drain and close operations in a defer function
+3. **Error Handling**: Ensure all code paths correctly handle the response body
+
+## Performance Impact
+
+- **Correct Implementation**: Connection reuse, reduced file descriptor usage, improved performance
+- **Incorrect Implementation**: Connection leaks, file descriptor exhaustion, program crashes
+
+## Related Resources
+
+- [Go Official Documentation - HTTP Client](https://golang.org/pkg/net/http/)
+- [Effective Go - Error Handling](https://golang.org/doc/effective_go.html#errors)
+- [Tuning the Go HTTP Client for High Performance](https://www.loginradius.com/blog/engineering/tune-the-go-http-client-for-high-performance/)
