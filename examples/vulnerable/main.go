@@ -8,18 +8,9 @@ import (
 	"runtime"
 	"sync"
 	"time"
-)
 
-func getFDCount() int {
-	// 1. 尝试读取 Linux 标准的进程文件描述符目录
-	files, err := os.ReadDir("/proc/self/fd")
-	if err != nil {
-		// 如果读取失败，返回 -1 方便我们在日志中区分“获取失败”和“数值为0”
-		return -1
-	}
-	// 减去 1 是因为 ReadDir 本身打开该目录也会占用一个 FD
-	return len(files) - 1
-}
+	"github.com/FelixBitSoul/go-http-leak-guard/utils"
+)
 
 func main() {
 	client := &http.Client{}
@@ -56,19 +47,9 @@ func main() {
 	go func() {
 		for {
 			pid := os.Getpid()
-			var fdCount int
 
 			// Cross-platform way to count file descriptors
-			if runtime.GOOS == "linux" {
-				// Linux: count files in /proc/self/fd
-				fdCount = getFDCount()
-			} else if runtime.GOOS == "windows" {
-				// Windows: we can't easily count handles, so we'll show a placeholder
-				fdCount = -1
-			} else {
-				// Other Unix-like systems
-				fdCount = -1
-			}
+			fdCount := utils.GetFDCount()
 
 			if fdCount >= 0 {
 				fmt.Printf("PID: %d, Active FDs: %d\n", pid, fdCount)

@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/FelixBitSoul/go-http-leak-guard/utils"
 )
 
 func main() {
@@ -28,22 +29,22 @@ func main() {
 					serverURL = envURL
 				}
 				resp, err := client.Get(serverURL)
-			if err != nil {
-				log.Printf("Request error: %v", err)
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
+				if err != nil {
+					log.Printf("Request error: %v", err)
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
 
-			// OPTIMIZED: Use an immediately-invoked function literal to ensure atomic resource handling.
-			// This guarantees resource cleanup even if subsequent logic panics.
-			func() {
-				// CRITICAL: Drain and discard the remaining body data.
-				// This is the key to allowing the Transport to reuse the TCP connection.
-				_, _ = io.Copy(io.Discard, resp.Body)
+				// OPTIMIZED: Use an immediately-invoked function literal to ensure atomic resource handling.
+				// This guarantees resource cleanup even if subsequent logic panics.
+				func() {
+					// CRITICAL: Drain and discard the remaining body data.
+					// This is the key to allowing the Transport to reuse the TCP connection.
+					_, _ = io.Copy(io.Discard, resp.Body)
 
-				// Ensure the body is closed, even if a panic occurs.
-				resp.Body.Close()
-			}()
+					// Ensure the body is closed, even if a panic occurs.
+					resp.Body.Close()
+				}()
 
 				time.Sleep(50 * time.Millisecond)
 			}
@@ -54,22 +55,9 @@ func main() {
 	go func() {
 		for {
 			pid := os.Getpid()
-			var fdCount int
 
 			// Cross-platform way to count file descriptors
-			if runtime.GOOS == "linux" {
-				// Linux: count files in /proc/self/fd
-				data, err := ioutil.ReadFile("/proc/self/fd")
-				if err == nil {
-					fdCount = len(data) // This is approximate, actual count would need directory listing
-				}
-			} else if runtime.GOOS == "windows" {
-				// Windows: we can't easily count handles, so we'll show a placeholder
-				fdCount = -1
-			} else {
-				// Other Unix-like systems
-				fdCount = -1
-			}
+			fdCount := utils.GetFDCount()
 
 			if fdCount >= 0 {
 				fmt.Printf("PID: %d, Active FDs: %d\n", pid, fdCount)

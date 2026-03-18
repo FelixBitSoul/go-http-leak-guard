@@ -1,0 +1,50 @@
+# 依赖目录
+vendor/
+
+# 构建产物
+bin/
+obj/
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# 测试覆盖文件
+*.out
+coverage.out
+
+# 编辑器和IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+tmp/
+
+# 其他临时文件
+*.tmp
+*.temp
+
+# 版本控制
+.git/
+
+# 备份文件
+*.bak
+*.backup
